@@ -1,0 +1,131 @@
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - --api.insecure=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=misterpy@gmail.com
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
+    restart: unless-stopped
+    networks:
+      - traefik
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_AUTH_PASSWORD}
+      - N8N_HOST=n8n.matchmates.de
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_PORT=5678
+      - N8N_RUNNERS_ENABLED=true
+      - WEBHOOK_TUNNEL_URL=https://n8n.matchmates.de/
+      - WEBHOOK_URL=https://n8n.matchmates.de/
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n.matchmates.de`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls.certresolver=le"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+    restart: unless-stopped
+    networks:
+      - traefik
+    depends_on:
+      - traefik
+    volumes:
+      - n8n-data:/home/node/.n8n
+
+  zitadel:
+    restart: unless-stopped
+    networks:
+      - traefik
+    image: "ghcr.io/zitadel/zitadel:latest"
+    command: 'start-from-init --masterkey "6vQw9pJz2XyR8aT1bLk4NfV7sGhU0eWc" --tlsMode external'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zitadel.rule=Host(`auth.matchmates.de`)"
+      - "traefik.http.routers.zitadel.entrypoints=websecure"
+      - "traefik.http.routers.zitadel.tls.certresolver=le"
+      - "traefik.http.services.zitadel.loadbalancer.server.port=8080"
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: the-db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_EXTERNALDOMAIN: auth.matchmates.de
+      ZITADEL_EXTERNALSECURE: true
+    depends_on:
+      the-db:
+        condition: "service_healthy"
+
+  the-db:
+    restart: unless-stopped
+    image: postgres:17-alpine
+    environment:
+      PGUSER: postgres
+      POSTGRES_PASSWORD: postgres
+    networks:
+      - traefik
+    #ports:
+    #- 127.0.0.1:${DB_PORT}:${DB_PORT}
+    volumes:
+      - matchmates-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "zitadel", "-U", "postgres"]
+      interval: "10s"
+      timeout: "30s"
+      retries: 5
+      start_period: "20s"
+
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    restart: always
+    container_name: gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.localhost'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+    ports:
+      - "2222:22"
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gitlab.rule=Host(`gitlab.localhost`)"
+      - "traefik.http.routers.gitlab.entrypoints=web"
+      - "traefik.http.services.gitlab.loadbalancer.server.port=80"
+    networks:
+      - traefik
+    depends_on:
+      - traefik
+
+volumes:
+  matchmates-data:
+  traefik-letsencrypt:
+  n8n-data:
+
+networks:
+  traefik:
+    external: false
