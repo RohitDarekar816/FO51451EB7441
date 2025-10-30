@@ -103,7 +103,7 @@ services:
     container_name: gitlab
     environment:
       GITLAB_OMNIBUS_CONFIG: |
-        external_url 'http://gitlab.localhost'
+        external_url 'https://gitlab.matchmates.de'
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
     ports:
       - "2222:22"
@@ -113,8 +113,9 @@ services:
       - gitlab_data:/var/opt/gitlab
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gitlab.rule=Host(`gitlab.localhost`)"
-      - "traefik.http.routers.gitlab.entrypoints=web"
+      - "traefik.http.routers.gitlab.rule=Host(`gitlab.matchmates.de`)"
+      - "traefik.http.routers.gitlab.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls.certresolver=le"
       - "traefik.http.services.gitlab.loadbalancer.server.port=80"
     networks:
       - traefik
