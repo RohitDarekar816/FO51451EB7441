@@ -97,6 +97,9 @@ services:
 volumes:
   traefik-letsencrypt:
   metabase_postgres:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
 
 networks:
   traefik:
