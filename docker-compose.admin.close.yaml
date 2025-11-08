@@ -1,53 +1,22 @@
 services:
-  traefik:
-    image: traefik:v2.10
-    container_name: traefik
-    command:
-      - --api.insecure=false
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
-      - --entrypoints.web.address=:80
-      - --entrypoints.websecure.address=:443
-      - --certificatesresolvers.le.acme.tlschallenge=true
-      - --certificatesresolvers.le.acme.email=misterpy@gmail.com
-      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
-      - --entrypoints.web.http.redirections.entryPoint.to=websecure
-      - --entrypoints.web.http.redirections.entryPoint.scheme=https
-      - --ping=true
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik-letsencrypt:/letsencrypt
-    restart: unless-stopped
-    networks:
-      - traefik
-
   gitlab:
     image: gitlab/gitlab-ce:latest
     restart: always
     container_name: gitlab
+    ports:
+      - 82:80
+      - 8443:443
+      - 2222:22
     environment:
       GITLAB_OMNIBUS_CONFIG: |
         external_url 'https://gitlab.matchmates.de'
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
-    ports:
-      - "2222:22"
     volumes:
       - gitlab_config:/etc/gitlab
       - gitlab_logs:/var/log/gitlab
       - gitlab_data:/var/opt/gitlab
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.gitlab.rule=Host(`gitlab.matchmates.de`)"
-      - "traefik.http.routers.gitlab.entrypoints=websecure"
-      - "traefik.http.routers.gitlab.tls.certresolver=le"
-      - "traefik.http.services.gitlab.loadbalancer.server.port=80"
     networks:
-      - traefik
-    depends_on:
-      - traefik
+      - npm_default
 
   metabase:
     image: metabase/metabase:latest
@@ -65,7 +34,7 @@ services:
       MB_DB_PASS: mysecretpassword
       MB_DB_HOST: postgres
     networks:
-      - traefik
+      - npm_default
     healthcheck:
       test: curl --fail -I http://localhost:3000/api/health || exit 1
       interval: 15s
@@ -73,14 +42,9 @@ services:
       retries: 5
     depends_on:
       - postgres
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.metabase.rule=Host(`report.matchmates.de`)"
-      - "traefik.http.routers.metabase.entrypoints=websecure"
-      - "traefik.http.routers.metabase.tls.certresolver=le"
-      - "traefik.http.services.metabase.loadbalancer.server.port=3000"
+
   postgres:
-    image: postgres:latest
+    image: postgres:17.6
     container_name: postgres
     hostname: postgres
     environment:
@@ -90,17 +54,14 @@ services:
     volumes:
       - metabase_postgres:/var/lib/postgresql/data
     networks:
-      - traefik
-    depends_on:
-      - traefik
+      - npm_default
 
 volumes:
-  traefik-letsencrypt:
   metabase_postgres:
   gitlab_config:
   gitlab_logs:
   gitlab_data:
 
 networks:
-  traefik:
-    external: false
+  npm_default:
+    external: true
